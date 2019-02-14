@@ -2,13 +2,7 @@
 """
 This file scrapes x for sentiment analysis.
 
-TODO; parse posts where they are quoting older posts.
-TODO; remove newline and other special characters from posts before writing to disk
-
 """
-
-
-
 
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
@@ -16,25 +10,49 @@ import pandas as pd
 import csv
 import re
 import pdb
+import time
+import datetime
 
 # Variables set here are to be redacted for IP protection and privacy.
 url = "x"
 username = "x"
 password = "x"
-stock = 'x'
+stocks = [x]
 
 class Post:
         
     def __init__(self, post):
         self.userid = re.findall('post-user-id-(.+)',post.get_attribute('class'))[0]
-        self.user_rep = re.findall('\. (.+)',post.find_element_by_class_name('user-ga-count').text)[0]
+        try:
+            self.user_rep = re.findall('\. (.+)',post.find_element_by_class_name('user-ga-count').text)[0]
+        except:
+            self.user_rep = 0
         self.date = post.find_element_by_class_name('post-metadata-date').text
         self.time = post.find_element_by_class_name('post-metadata-time').text
         meta = [p.text for p in post.find_elements_by_class_name('meta-details')]
         self.price = re.findall('\: (.+)',meta[0])[0]
         self.sentiment = re.findall('\: (.+)',meta[1])[0]
         self.disclosure = re.findall('\: (.+)',meta[2])[0]
-        self.message = post.find_element_by_class_name('message-text').text
+        self.message = post.find_element_by_class_name('message-text')
+        try:
+            self.message = remove_element(self.message, classnames = ['attribution','quoteContainer', 'bbCodeBlock']).text
+        except:
+            self.message = self.message.text
+            pass
+        self.message = self.sanitize_message()
+        
+    def sanitize_message(self):
+        return ''.join(re.findall('([^\\n][a-z A-Z0-9\.\,\?]+)', self.message))
+        
+
+def remove_element(parent, classnames):
+    for c in classnames:
+        element = parent.find_element_by_class_name(c)
+        parent.execute_script("""
+            var element = arguments[0];
+            element.parentNode.removeChild(element);
+            """, element)
+    return parent
         
 
 def login(driver, username, password):
@@ -72,43 +90,88 @@ def get_recent_links(url, stock):
     return thread_links
 
 def process_page(driver, write2disk=False):
+    thread_title = driver.find_element_by_id('thread-title').text
+    num_posts = 0
+    print('Processing page: {}'.format(driver.title))
     if write2disk:
-        f = open('Data/'+stock+'.csv','w+')
-        writer = csv.DictWriter(f, 
-                                fieldnames = ['date', 'time','userid', 'user_rep', 'price', 'sentiment', 'disclosure','message'],
+        try:
+            f = open('Data/'+stock+'.csv','r')
+            f = open('Data/'+stock+'.csv','a')
+            writer = csv.DictWriter(f, 
+                                fieldnames = ['date', 'time','thread','userid', 'user_rep', 'price', 'sentiment', 'disclosure','message'],
                                 delimiter=',', 
                                 quotechar='"', 
                                 quoting=csv.QUOTE_MINIMAL)
-        writer.writeheader()
+        except:
+            f = open('Data/'+stock+'.csv','w+')
+            writer = csv.DictWriter(f, 
+                                fieldnames = ['date', 'time','thread','userid', 'user_rep', 'price', 'sentiment', 'disclosure','message'],
+                                delimiter=',', 
+                                quotechar='"', 
+                                quoting=csv.QUOTE_MINIMAL)
+            writer.writeheader()
     posts = driver.find_elements_by_class_name('post-message')
     for post in posts:
+        num_posts += 1
         p = Post(post)
+        to_write = p.__dict__
+        to_write['thread'] = thread_title
         if write2disk:
-            writer.writerow(p.__dict__)
+            writer.writerow(to_write)
     if write2disk: f.close()
+    return num_posts
     
+def file_len(fname):
+    with open(fname) as f:
+        for i, l in enumerate(f,1):
+            pass
+    return i
 
 ''' MAIN CODE STARTS HERE. ALSO GOOD FOR PUTTING IN A __MAIN__ FUNCTION'''
-driver = webdriver.Chrome()
-driver.get(url)
-try:
-    elem = driver.find_element_by_id("login-register-btn")
-    login(driver, username, password)
-except Exception as e:
-    if 'no such element' in e.args[0]:
-        print('Already Logged in. Proceeding.')
-    else:
-        print('Unknown error:\n{0}'.format(e))
-threads = get_recent_links(url, stock)
+for stock in stocks:
+    start_time = time.time()
+    driver = webdriver.Chrome()
+    driver.get(url)
+    try:
+        elem = driver.find_element_by_id("login-register-btn")
+        login(driver, username, password)
+    except Exception as e:
+        if 'no such element' in e.args[0]:
+            print('Already Logged in. Proceeding.')
+        else:
+            print('Unknown error:\n{0}'.format(e))
+    threads = get_recent_links(url, stock)
+    num_posts = 0
+    num_threads = 0
+    for thread in threads:
+        if type(thread) == list:
+            for page in thread:
+                driver.get(page)
+                num_threads += num_threads
+                num_posts += process_page(driver,write2disk=True)
+        elif type(thread) == str:
+            driver.get(thread)
+            num_threads += num_threads
+            num_posts += process_page(driver,write2disk=True)
+        else:
+            print('Unknown link format:\n{0}'.format(thread))
+    
+    
+    elapsed_time = time.time() - start_time
+    d = datetime.timedelta(seconds= elapsed_time)
+    d = datetime.datetime(1,1,1) + d
+    elapsed_time = "%d days:%d hours:%d minutes:%d seconds" % (d.day-1, d.hour, d.minute, d.second)
+    today = datetime.datetime.now().date()
+    conf_dict = {
+            'date_collected':today,
+            'total_threads_parsed':num_threads, 
+            'number_of_posts':num_posts, 
+            'time_taken_to_scrape':elapsed_time}
+    with open(stock + '.csv', mode='w') as csv_file:
+        fieldnames = ['date_collected','total_threads_parsed', 'number_of_posts', 'time_taken_to_scrape']
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+    
+        writer.writeheader()
+        writer.writerow(conf_dict)
 
-for thread in threads:
-    if type(thread) == list:
-        for page in thread:
-            driver.get(page)
-
-    elif type(thread) == str:
-        driver.get(thread)
-        process_page(driver,write2disk=True)
-    else:
-        print('Unknown link format:\n{0}'.format(thread))
 driver.close()
