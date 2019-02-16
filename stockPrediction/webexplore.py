@@ -12,10 +12,10 @@ import time
 import datetime as dt
 
 # Variables set here are to be redacted for IP protection and privacy.
-URL = 'x'
-USERNAME = 'x'
-PASSWORD = 'x'
-STOCKS = ['x','x','x','x','x']
+URL = ''
+USERNAME = ''
+PASSWORD = ''
+STOCKS = []
 DRIVER = webdriver.Chrome()
 LOGFILE = 'last_run.log'
 
@@ -110,7 +110,6 @@ class Forum:
                 if isinstance(thread, list):
                     for page in thread:
                         self.visit(page)
-                        time.sleep(2)
                         self.process_page(count = page_count, writer = writer)
                         page_count += 1
                 elif isinstance(thread, str):
@@ -150,11 +149,19 @@ class Forum:
     def process_page(self, count, writer=''):
         thread_title = self.driver.find_element_by_id('thread-title').text
         num_posts = 0
-        logger.writelog('{0} Processing page: {1}'.format(count, thread_title))            
+        logger.writelog('{0} Processing page: {1}'.format(count, thread_title))
+        logger.writelog('Removing quoted messages')
         posts = self.driver.find_elements_by_class_name('post-message')
         logger.writelog('Found {} post elements.'.format(len(posts)))
         try:
             for post in posts:
+                try:
+                    self.driver.execute_script("""
+                var element = arguments[0];
+                element.parentNode.removeChild(element);
+                """, self.driver.find_element_by_class_name('attribution'))
+                except:
+                    pass
                 num_posts += 1
                 p = Post()
                 p.parse_post(post)
@@ -199,18 +206,17 @@ class Post:
             self.sentiment = ''
             self.disclosure = ''
         self.message = post.find_element_by_class_name('message-text')
-        try:
-            self.message = remove_element(self.message, classnames = ['attribution','quoteContainer', 'bbCodeBlock', 'bbCodeQuote']).text
-        except:
-            self.message = self.message.text
-            pass
+        self.message = self.message.text
+        old = self.message #for debugging purposes
         self.sanitize_message()
+        if self.message == '':
+            logger.writelog('Couldnt parse: {}'.format(old))
     
     def sanitize_message(self):
         self.message = ''.join(re.findall('([^\\n][a-z A-Z0-9\.\,\?]+)', self.message))
         oc = re.findall('Originally posted by \w+: (.+)', self.message)
-        if oc != '':
-            self.message = ''.join(re.findall('Originally posted by \w+: (.+)', self.message))
+        if len(oc) > 0:
+            self.message = ''.join(oc)
 
 class Logger:
     def __init__(self, logfile):
@@ -288,3 +294,4 @@ for stock in STOCKS:
                num_posts = forum.num_posts,
                elapsed_time = elapsed_time)
 forum.driver.close()
+logger.close_log()
