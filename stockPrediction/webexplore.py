@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 This file scrapes x for sentiment analysis.
-
+@author: deefunkt
 """
 
 from selenium import webdriver
@@ -11,14 +11,16 @@ import re
 import time
 import datetime as dt
 
+###############################################################################
 # Variables set here are to be redacted for IP protection and privacy.
 URL = ''
 USERNAME = ''
 PASSWORD = ''
 STOCKS = []
 DRIVER = webdriver.Chrome()
-LOGFILE = 'last_run.log'
+LOGFILE = 'Logs/last_run.log'
 
+###############################################################################
 ''' CLASS DEFINITIONS '''
 class Forum:
     def __init__(self, driver):
@@ -45,8 +47,11 @@ class Forum:
         logger.writelog('Stock set.')
     
     def visit(self, page):
-        self.driver.get(page)
-        logger.writelog('Visiting {}'.format(page))
+        try:
+            self.driver.get(page)
+            logger.writelog('Visiting {}'.format(page))
+        except:
+            logger.writelog('Unable to fetch {}'.format(page))
     
     def login(self):
         try:
@@ -107,17 +112,21 @@ class Forum:
             writer.writeheader()
             page_count = 1
             for thread in self.threads:
-                if isinstance(thread, list):
-                    for page in thread:
-                        self.visit(page)
+                try:
+                    
+                    if isinstance(thread, list):
+                        for page in thread:
+                            self.visit(page)
+                            self.process_page(count = page_count, writer = writer)
+                            page_count += 1
+                    elif isinstance(thread, str):
+                        self.visit(thread)
                         self.process_page(count = page_count, writer = writer)
                         page_count += 1
-                elif isinstance(thread, str):
-                    self.visit(thread)
-                    self.process_page(count = page_count, writer = writer)
-                    page_count += 1
-                else:
-                    logger.writelog('Unknown link format:{}\n{}'.format(type(thread),thread))
+                    else:
+                        logger.writelog('Unknown link format:{}\n{}'.format(type(thread),thread))
+                except Exception as e:
+                    logger.writelog('Thread {} returned the following error: \n{}'.format(thread, e.args[0]))
             f.close()
             logger.writelog('Closed file')
         else:
@@ -219,9 +228,13 @@ class Post:
             self.message = ''.join(oc)
 
 class Logger:
-    def __init__(self, logfile):
+    def __init__(self, logfile, one_time=False):
         self.f = open(logfile, 'w+')
+        if one_time:
+            self.f.seek(0)
+            self.f.truncate()
         self.f.write(str(dt.datetime.now()) + '\n')
+        self.f.write('##############################')
     
     def writelog(self, log_string):
        self.f.write(log_string + '\n')
@@ -230,6 +243,25 @@ class Logger:
     def close_log(self):
         self.f.close()
         
+class Timer:
+    def __init__(self):
+        self.start_time = 0
+        
+    def start(self):
+        self.start_time = time.time()
+        
+    def elapsed_time(self):
+        return time.time() - self.start_time
+    
+    def elapsed_time_string(self):
+        elapsed_time = time.time() - self.start_time
+        d = dt.timedelta(seconds= elapsed_time)
+        d = dt.datetime(1,1,1) + d
+        elapsed_time = "%d days:%d hours:%d minutes:%d seconds" % (d.day-1, d.hour, d.minute, d.second)
+        return elapsed_time
+            
+
+###############################################################################
 '''GENERAL PURPOSE METHOD DEFINITIONS'''
 def remove_element(parent, classnames):
     for c in classnames:
@@ -246,12 +278,7 @@ def file_len(fname):
             pass
     return i
 
-def elapsed_time_string(start_time):
-    elapsed_time = time.time() - start_time
-    d = dt.timedelta(seconds= elapsed_time)
-    d = dt.datetime(1,1,1) + d
-    elapsed_time = "%d days:%d hours:%d minutes:%d seconds" % (d.day-1, d.hour, d.minute, d.second)
-    return elapsed_time
+
 
 def write_conf(stock, thread_count, num_posts, elapsed_time):
     today = dt.datetime.now().date()
@@ -260,7 +287,7 @@ def write_conf(stock, thread_count, num_posts, elapsed_time):
             'total_threads_parsed':thread_count, 
             'number_of_posts':num_posts,
             'time_taken_to_scrape':elapsed_time}
-    with open(stock + '.csv', mode='w') as csv_file:
+    with open('Logs/' + stock + '_run.csv', mode='w') as csv_file:
         logger.writelog('Clearing existing conf file if exists')
         csv_file.seek(0)
         csv_file.truncate()
@@ -272,9 +299,16 @@ def write_conf(stock, thread_count, num_posts, elapsed_time):
         writer.writeheader()
         writer.writerow(conf_dict)
 
-''' MAIN CODE STARTS HERE. ALSO GOOD FOR PUTTING IN A __MAIN__ FUNCTION'''
+
+###############################################################################
+''' Initialization '''
+timer = Timer()
 logger = Logger(LOGFILE)
 forum = Forum(DRIVER)
+
+
+###############################################################################
+''' MAIN CODE STARTS HERE. ALSO GOOD FOR PUTTING IN A __MAIN__ FUNCTION '''
 forum.set_user(USERNAME, PASSWORD)
 forum.set_url(URL)
 forum.visit(forum.url)
@@ -282,16 +316,20 @@ forum.login()
 time.sleep(5)
 for stock in STOCKS:
     logger.writelog('MAIN: Fetching ' +  stock)
-    start_time = time.time()
+    timer.start()
     forum.set_stock(stock)
     forum.get_recent_links(extended=True)
     logger.writelog('MAIN: Found {} threads.'.format(forum.count_threads()))
     forum.process_links()
     logger.writelog('MAIN: Found {} posts.'.format(forum.num_posts))
-    elapsed_time = elapsed_time_string(start_time)
+    elapsed_time = timer.elapsed_time_string()
     write_conf(stock=stock,
                thread_count = forum.count_threads(),
                num_posts = forum.num_posts,
                elapsed_time = elapsed_time)
+
+
+###############################################################################
+''' Cleanup Operations '''
 forum.driver.close()
 logger.close_log()
