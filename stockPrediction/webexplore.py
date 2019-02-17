@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 This file scrapes x for sentiment analysis.
-@author: deefunkt
+
 """
 
 from selenium import webdriver

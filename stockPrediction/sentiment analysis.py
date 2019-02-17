@@ -2,20 +2,25 @@
 """
 Created on Sun Feb 17 13:18:37 2019
 
-@author: deefunkt
+@author: A-Sha
+TODO: some weird shenanigans with pd.df.plot 
 """
 import time
 import datetime as dt
 import pandas as pd
+from glob import glob
 import re
 import matplotlib.pyplot as plt
 from matplotlib import style
+import matplotlib.dates as mdates
 from textblob import TextBlob
 
 ###############################################################################
 '''Global conf variables '''
 stock = ''
+altname= ''
 LOGFILE = 'sentiment_analysis.log'
+DATAPATH = './Data/asxData/'
 style.use('ggplot')
 
 ###############################################################################
@@ -62,7 +67,35 @@ def preprocess_messages(messages):
     messages = messages.str.replace(REPLACE_NO_SPACE, '',regex=True)
     messages[messages.isna()] = 'text'
     return messages
+
+def stock_data_import(path):
+    csv_files = glob(path + '*/*', recursive=True)
+    csv_files.sort()
+    rawdata = []
+    for i in range(0, len(csv_files)):
+        temp_cv = pd.read_csv(csv_files[i], header=0, index_col=0,
+                              names=['Date', 'Open', 'High', 'Low', 'Close', 'Volume'],
+                              parse_dates=['Date'])
+        try:
+            rawdata.append(temp_cv.loc[stock])
+        except KeyError:
+            try:
+                rawdata.append(temp_cv.loc[altname])
+            except:
+                pass
+            print(stock + " not found at " + str(temp_cv.ix[0, 'Date']))
+    processed_data = pd.DataFrame(rawdata, 
+                                  columns=['Date', 'Open', 'High', 'Low', 'Close', 'Volume'])
+    processed_data = processed_data.reset_index(drop=True)
+    processed_data.set_index('Date', inplace=True)
+    # currently in format [Open, High, Low, Close, Volume].
+    # We reorganize:
+    cols = ['Open', 'High', 'Low', 'Volume','Close']
+    processed_data = processed_data[cols]
+    print('End of data import.')
+    return processed_data
     
+
 def get_sentiment(blob):
     return blob.sentiment.polarity
 
@@ -98,18 +131,29 @@ sentiments_date['day'] = sentiments_date.index.day_name()
 for index, value in sentiments_date.iterrows():
     sentiments_date.loc[index, 'sentiment'] = df.sentiment[df.index.date == index.date()].mean()
     sentiments_date.loc[index, 'subjectivity'] = df.subjectivity[df.index.date == index.date()].mean()
+logger.writelog('Preprocessing took {} seconds'.format(timer.elapsed_time()))
+timer.start()
+stock_data = stock_data_import(DATAPATH)
+logger.writelog('Importing ASX data took {} seconds'.format(timer.elapsed_time()))
 
-ax1 = plt.subplot(2,1,1)
+
+
 sentiments_date['sentiment'].plot(label = 'sentiment')
 plt.legend()
 
-ax2 = plt.subplot(2,1,2, sharex=ax1)
+ax2 = plt.subplot(2,1,1)
 sentiments_date['subjectivity'].plot(label = 'subjectivity')
 plt.legend()
+
+
+#set major ticks format
+
 
 plt.show()
 
 
-logger.writelog('Preprocessing took {} seconds'.format(timer.elapsed_time()))
-
-logger.close_log()
+ax3 = plt.subplot(2,1,2)
+stock_data['Close'].plot( label = '', )
+plt.legend()
+plt.show()
+#logger.close_log()
