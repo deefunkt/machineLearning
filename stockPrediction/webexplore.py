@@ -13,10 +13,7 @@ import datetime as dt
 
 ###############################################################################
 # Variables set here are to be redacted for IP protection and privacy.
-URL = ''
-USERNAME = ''
-PASSWORD = ''
-STOCKS = []
+
 DRIVER = webdriver.Chrome()
 LOGFILE = 'Logs/last_run.log'
 
@@ -235,6 +232,7 @@ class Logger:
             self.f.truncate()
         self.f.write(str(dt.datetime.now()) + '\n')
         self.f.write('##############################')
+        self.conf_dict = {}
     
     def writelog(self, log_string):
        self.f.write(log_string + '\n')
@@ -242,6 +240,9 @@ class Logger:
         
     def close_log(self):
         self.f.close()
+        
+    def read_conf(self,conf_file='Conf/conf.csv'):
+        self.conf_dict = pd.read_csv(conf_file, delimiter=',')
         
 class Timer:
     def __init__(self):
@@ -304,8 +305,12 @@ def write_conf(stock, thread_count, num_posts, elapsed_time):
 ''' Initialization '''
 timer = Timer()
 logger = Logger(LOGFILE)
+logger.read_conf()
 forum = Forum(DRIVER)
-
+URL = logger.conf_dict['forum_url']
+USERNAME = logger.conf_dict['username']
+PASSWORD = logger.conf_dict['password']
+STOCKS = logger.conf_dict['stock']
 
 ###############################################################################
 ''' MAIN CODE STARTS HERE. ALSO GOOD FOR PUTTING IN A __MAIN__ FUNCTION '''

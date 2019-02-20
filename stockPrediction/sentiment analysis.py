@@ -3,7 +3,6 @@
 Created on Sun Feb 17 13:18:37 2019
 
 @author: A-Sha
-TODO: some weird shenanigans with pd.df.plot 
 """
 import time
 import datetime as dt
@@ -17,9 +16,8 @@ from textblob import TextBlob
 
 ###############################################################################
 '''Global conf variables '''
-stock = ''
-altname= ''
-LOGFILE = 'sentiment_analysis.log'
+LOG_FILE = 'sentiment_analysis.log'
+CONF_FILE = 'Conf/conf.csv'
 DATAPATH = './Data/asxData/'
 style.use('ggplot')
 
@@ -51,6 +49,7 @@ class Logger:
             self.f.truncate()
         self.f.write(str(dt.datetime.now()) + '\n')
         self.f.write('##############################')
+        self.conf_dict = {}
     
     def writelog(self, log_string):
        self.f.write(log_string + '\n')
@@ -59,12 +58,28 @@ class Logger:
     def close_log(self):
         self.f.close()
         
+    def read_conf(self,conf_file='Conf/conf.csv'):
+        self.conf_dict = pd.read_csv(conf_file, delimiter=',')
+    
 ###############################################################################
 ''' General method definitions '''
 
 def preprocess_messages(messages):
+    REPLACE_NO_SPACE = re.compile("(\$)|(\+)|(@)|(%)|(\;)|(\:)|(\!)|(\?)|(\,)|(\")|(\()|(\))|(\[)|(\])|([0-9]+)")
+    REPLACE_WITH_SPACE = re.compile("(<br\s*/><br\s*/>)|(\-)|(\/)|(\.)")
+    contr_dict={"I'm": "I am",
+            "won't": "will not",
+            "'s" : "", 
+            "'ll":" will",
+            "'ve":" have",
+            "n't":" not",
+            "'re": " are",
+            "'d": " would",
+            "y'all": "all of you"}
     messages = messages.str.replace(REPLACE_WITH_SPACE, ' ', regex=True)
-    messages = messages.str.replace(REPLACE_NO_SPACE, '',regex=True)
+    messages = messages.str.replace(REPLACE_NO_SPACE, ' ',regex=True)
+    messages = messages.str.replace('\s{2,}', ' ', regex=True)
+    messages = messages.str.lower()
     messages[messages.isna()] = 'text'
     return messages
 
@@ -83,9 +98,8 @@ def stock_data_import(path):
                 rawdata.append(temp_cv.loc[altname])
             except:
                 pass
-            print(stock + " not found at " + str(temp_cv.ix[0, 'Date']))
-    processed_data = pd.DataFrame(rawdata, 
-                                  columns=['Date', 'Open', 'High', 'Low', 'Close', 'Volume'])
+            print(stock + " not found at " + str(temp_cv['Date'][0].date()))
+    processed_data = pd.DataFrame(rawdata)
     processed_data = processed_data.reset_index(drop=True)
     processed_data.set_index('Date', inplace=True)
     # currently in format [Open, High, Low, Close, Volume].
@@ -105,16 +119,21 @@ def get_subjectivity(blob):
 ###############################################################################
 ''' Initialization '''
 timer = Timer()
-logger = Logger(LOGFILE, one_time=True)
-
+logger = Logger(LOG_FILE, one_time=True)
+logger.read_conf()
+stock = 'KRR'
+altname= 'KRC'
+timer.start()
+stock_data = stock_data_import(DATAPATH)
+logger.writelog('Importing ASX data took {} seconds'.format(timer.elapsed_time()))
+df = pd.read_csv('Data/' + stock + '.csv', encoding = "cp1252")
 ###############################################################################
 ''' Preprocessing stage '''
 logger.writelog('Beginning preprocessing.')
-REPLACE_NO_SPACE = re.compile("(\;)|(\:)|(\!)|(\')|(\?)|(\,)|(\")|(\()|(\))|(\[)|(\])")
-REPLACE_WITH_SPACE = re.compile("(<br\s*/><br\s*/>)|(\-)|(\/)|(\.)")
+
 
 timer.start()
-df = pd.read_csv('Data/' + stock + '.csv', encoding = "cp1252")
+
 df['datetime'] = df['date'] + ' ' + df['time']
 df.set_index('datetime', inplace=True)
 df.drop(['date','time'], inplace=True, axis=1)
@@ -124,7 +143,6 @@ df['message'] = preprocess_messages(df['message'])
 df['textblob'] = df['message'].apply(TextBlob)
 df['sentiment'] = df.textblob.apply(get_sentiment)
 df['subjectivity'] = df.textblob.apply(get_subjectivity)
-
 sentiments_date = pd.DataFrame(columns = ['sentiment', 'subjectivity'], index=pd.unique(df.index.date))
 sentiments_date.index = pd.to_datetime(sentiments_date.index)
 sentiments_date['day'] = sentiments_date.index.day_name()
@@ -132,18 +150,20 @@ for index, value in sentiments_date.iterrows():
     sentiments_date.loc[index, 'sentiment'] = df.sentiment[df.index.date == index.date()].mean()
     sentiments_date.loc[index, 'subjectivity'] = df.subjectivity[df.index.date == index.date()].mean()
 logger.writelog('Preprocessing took {} seconds'.format(timer.elapsed_time()))
-timer.start()
-stock_data = stock_data_import(DATAPATH)
-logger.writelog('Importing ASX data took {} seconds'.format(timer.elapsed_time()))
 
 
 
-sentiments_date['sentiment'].plot(label = 'sentiment')
+ax3 = plt.subplot(3,1,1)
+stock_data['Close'].plot( label = stock + ' Close', )
+plt.legend()
+ax2 = plt.subplot(3,1,2)
+sentiments_date['subjectivity'].plot(label = 'subjectivity', sharex=ax3)
+plt.legend()
+ax1 = plt.subplot(3,1,3)
+sentiments_date['sentiment'].plot(label = 'sentiment', sharex=ax3)
 plt.legend()
 
-ax2 = plt.subplot(2,1,1)
-sentiments_date['subjectivity'].plot(label = 'subjectivity')
-plt.legend()
+
 
 
 #set major ticks format
@@ -151,9 +171,4 @@ plt.legend()
 
 plt.show()
 
-
-ax3 = plt.subplot(2,1,2)
-stock_data['Close'].plot( label = '', )
-plt.legend()
-plt.show()
-#logger.close_log()
+logger.close_log()
