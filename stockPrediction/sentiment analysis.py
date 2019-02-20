@@ -27,20 +27,20 @@ style.use('ggplot')
 class Timer:
     def __init__(self):
         self.start_time = 0
-        
+
     def start(self):
         self.start_time = time.time()
-        
+
     def elapsed_time(self):
         return time.time() - self.start_time
-    
+
     def elapsed_time_string(self):
         elapsed_time = time.time() - self.start_time
         d = dt.timedelta(seconds= elapsed_time)
         d = dt.datetime(1,1,1) + d
         elapsed_time = "%d days:%d hours:%d minutes:%d seconds" % (d.day-1, d.hour, d.minute, d.second)
         return elapsed_time
-    
+
 class Logger:
     def __init__(self, logfile, one_time=False):
         self.f = open(logfile, 'w+')
@@ -50,17 +50,17 @@ class Logger:
         self.f.write(str(dt.datetime.now()) + '\n')
         self.f.write('##############################')
         self.conf_dict = {}
-    
+
     def writelog(self, log_string):
        self.f.write(log_string + '\n')
        print(log_string)
-        
+
     def close_log(self):
         self.f.close()
-        
+
     def read_conf(self,conf_file='Conf/conf.csv'):
         self.conf_dict = pd.read_csv(conf_file, delimiter=',')
-    
+
 ###############################################################################
 ''' General method definitions '''
 
@@ -69,13 +69,14 @@ def preprocess_messages(messages):
     REPLACE_WITH_SPACE = re.compile("(<br\s*/><br\s*/>)|(\-)|(\/)|(\.)")
     contr_dict={"I'm": "I am",
             "won't": "will not",
-            "'s" : "", 
+            "'s" : "",
             "'ll":" will",
             "'ve":" have",
             "n't":" not",
             "'re": " are",
             "'d": " would",
             "y'all": "all of you"}
+    messages = messages.replace(contr_dict, regex=True)
     messages = messages.str.replace(REPLACE_WITH_SPACE, ' ', regex=True)
     messages = messages.str.replace(REPLACE_NO_SPACE, ' ',regex=True)
     messages = messages.str.replace('\s{2,}', ' ', regex=True)
@@ -108,7 +109,7 @@ def stock_data_import(path):
     processed_data = processed_data[cols]
     print('End of data import.')
     return processed_data
-    
+
 
 def get_sentiment(blob):
     return blob.sentiment.polarity
